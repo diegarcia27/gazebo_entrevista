@@ -11,7 +11,8 @@
 #include <mavros_msgs/HomePosition.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <mavros_msgs/WaypointSetCurrent.h>
-
+#include <mavros_msgs/SetMavFrame.h>
+#include <stdlib.h>
 mavros_msgs::State current_state;
 mavros_msgs::ExtendedState current_extended_state;
 mavros_msgs::WaypointList waypoints;
@@ -75,7 +76,7 @@ void global_position_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
         // distance = sqrt(pow(distance, 2) + pow(, 2));
 
         ROS_INFO("Distance to next waypoint: %f meters", distance);
-        if (distance < 0.4)
+        if (distance < 2.)
         {
             mavros_msgs::WaypointSetCurrent wp_current;
             wp_current.request.wp_seq = waypoint_reached_combined.wp_seq + 2;
@@ -86,6 +87,7 @@ void global_position_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
         }
     }
 }
+
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "commander_node");
@@ -107,13 +109,17 @@ int main(int argc, char **argv)
     //Publishers        
     wp_reached_combined = nh.advertise<mavros_msgs::WaypointReached>
             ("offboard_control/waypoint_reached_combined", 10);
+
     // Services
     ros::ServiceClient arming_client = nh.serviceClient<mavros_msgs::CommandBool>
             ("mavros/cmd/arming");
     ros::ServiceClient set_mode_client = nh.serviceClient<mavros_msgs::SetMode>
             ("mavros/set_mode");
+    ros::ServiceClient setFrame = nh.serviceClient<mavros_msgs::SetMavFrame>
+            ("mavros/setpoint_position/mav_frame");
     waypoint_set_current = nh.serviceClient<mavros_msgs::WaypointSetCurrent>
             ("mavros/mission/set_current");
+    
 
     ROS_INFO("Waiting for FCU connection...");
     while(ros::ok() && !current_state.connected){
@@ -127,10 +133,7 @@ int main(int argc, char **argv)
         rate.sleep();
     }
     ROS_INFO("Waypoints received: %lu", waypoints.waypoints.size());
-    ROS_INFO("Printing waypoints locations:");
-    for (int i = 0; i < waypoints.waypoints.size(); i++) {
-        ROS_INFO("Waypoint %d: x = %f, y = %f, z = %f", i, waypoints.waypoints[i].x_lat, waypoints.waypoints[i].y_long, waypoints.waypoints[i].z_alt);
-    }
+
     ROS_INFO("Waiting for drone landed");
     while(ros::ok() && current_extended_state.landed_state != mavros_msgs::ExtendedState::LANDED_STATE_ON_GROUND){
         ros::spinOnce();
@@ -144,7 +147,6 @@ int main(int argc, char **argv)
     mavros_msgs::CommandBool arm_cmd;
     arm_cmd.request.value = true;
 
-    // Mission mode and arm
     while(current_state.mode != "AUTO.MISSION" || !current_state.armed){
         if( current_state.mode != "AUTO.MISSION"){
             ROS_INFO("Commanding mission");
@@ -164,11 +166,15 @@ int main(int argc, char **argv)
         ros::spinOnce();
         rate.sleep();
     }
-    // Wait until mission starts
+    // Start recording the rosbag
+    // int i; i=system("rosbag record -o ~/rosbag/ -a __name:=my_bag &");
+
+    ROS_INFO("Waiting for the first waypoint to be reached...");
     while(ros::ok() && waypoint_reached_combined.wp_seq != 0){
         ros::spinOnce();
         rate.sleep();
     }
+    
     // Run until drone lands
     while(ros::ok() && current_extended_state.landed_state != mavros_msgs::ExtendedState::LANDED_STATE_ON_GROUND){
         if(waypoint_reached_combined.wp_seq < 2) {
@@ -197,6 +203,7 @@ int main(int argc, char **argv)
         ros::spinOnce();
         rate.sleep();
     }
+    i=system("rosnode kill /my_bag");
     ROS_INFO("Drone landed.");
     return 0;
 }

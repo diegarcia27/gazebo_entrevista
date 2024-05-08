@@ -43,6 +43,8 @@ void home_position_cb(const mavros_msgs::HomePosition::ConstPtr& msg){
     current_home_position = *msg;
 }
 
+// Callback for global position
+
 void global_postion_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
     current_global_position = *msg;
     // Sanity checks
@@ -55,8 +57,10 @@ void global_postion_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
     mavros_msgs::Waypoint next_wp = waypoints.waypoints[waypoint_reached.wp_seq + 1];
     
     // Calculate the direction in degrees from north
-    double lat_diff = next_wp.x_lat - last_wp.x_lat;
-    double lon_diff = next_wp.y_long - last_wp.y_long;
+    // double lat_diff = next_wp.x_lat - last_wp.x_lat;
+    // double lon_diff = next_wp.y_long - last_wp.y_long;
+    double lat_diff = next_wp.x_lat - current_global_position.latitude;
+    double lon_diff = next_wp.y_long - current_global_position.longitude;
     double direction_rad = atan2(lat_diff, lon_diff);
     position_sp.yaw = direction_rad;
 
@@ -71,12 +75,10 @@ void global_postion_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
                             mavros_msgs::GlobalPositionTarget::IGNORE_AFX |
                             mavros_msgs::GlobalPositionTarget::IGNORE_AFY |
                             mavros_msgs::GlobalPositionTarget::IGNORE_AFZ |
-                            // mavros_msgs::GlobalPositionTarget::FORCE |
-                            mavros_msgs::GlobalPositionTarget::IGNORE_YAW |
                             mavros_msgs::GlobalPositionTarget::IGNORE_YAW_RATE;
-    // if (current_control_mode.data == 1){
-    //     position_sp_pub.publish(position_sp);
-    // }
+    if (current_control_mode.data == 1){
+        position_sp_pub.publish(position_sp);
+    }
     position_sp_pub.publish(position_sp);
     position_control_pub.publish(position_sp);
     
