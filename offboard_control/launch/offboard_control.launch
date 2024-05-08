@@ -1,0 +1,7 @@
+<launch>
+    <!-- Start commander_node -->
+    <node name="commander_node" pkg="offboard_control" type="commander" output="screen" />
+
+    <!-- Start position_node -->
+    <node name="position_node" pkg="offboard_control" type="position" output="screen" />
+</launch>
