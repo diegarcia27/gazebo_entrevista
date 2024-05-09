@@ -120,6 +120,24 @@ int main(int argc, char **argv)
     waypoint_set_current = nh.serviceClient<mavros_msgs::WaypointSetCurrent>
             ("mavros/mission/set_current");
     
+    int offboard_control_mode;
+    std::cout << "Enter a number from 0 to 3: ";
+    std::cout << "0 = No offboard mode, 1 = Position, 2 = Speed, 3 = Thrust: ";
+    std::cin >> offboard_control_mode;
+    switch (offboard_control_mode) {
+        case 1:
+            ROS_INFO("Position control mode selected");
+            break;
+        case 2:
+            ROS_INFO("Speed control mode selected");
+            break;
+        case 3:
+            ROS_INFO("Thrust control mode selected");
+            break;
+        default:
+            ROS_INFO("No offboard control mode selected");
+            break;
+    }
     // Set the control mode to OFF
     current_control_mode.data = OffboardControlMode::OFF;
     control_mode_pub.publish(current_control_mode);
@@ -128,7 +146,6 @@ int main(int argc, char **argv)
         ros::spinOnce();
         rate.sleep();
     }
-    ROS_INFO("FCU connected");
     ROS_INFO("Waiting for waypoints...");
     while(ros::ok() && waypoints.waypoints.size() < 5){
         ros::spinOnce();
@@ -136,11 +153,11 @@ int main(int argc, char **argv)
     }
     ROS_INFO("Waypoints received: %lu", waypoints.waypoints.size());
 
-    ROS_INFO("Waiting for drone landed");
-    while(ros::ok() && current_extended_state.landed_state != mavros_msgs::ExtendedState::LANDED_STATE_ON_GROUND){
-        ros::spinOnce();
-        rate.sleep();
-    }
+    // ROS_INFO("Waiting for drone landed");
+    // while(ros::ok() && current_extended_state.landed_state != mavros_msgs::ExtendedState::LANDED_STATE_ON_GROUND){
+    //     ros::spinOnce();
+    //     rate.sleep();
+    // }
 
     ROS_INFO("Commanding mission mode and arming");
     mavros_msgs::SetMode offb_set_mode;
@@ -151,17 +168,13 @@ int main(int argc, char **argv)
 
     while(current_state.mode != "AUTO.MISSION" || !current_state.armed){
         if( current_state.mode != "AUTO.MISSION"){
-            ROS_INFO("Commanding mission");
             if( set_mode_client.call(offb_set_mode) &&
                 offb_set_mode.response.mode_sent){
-                ROS_INFO("Mission enabled");
             }
         } else {
             if( !current_state.armed){
-                ROS_INFO("Arming vehicle");
                 if( arming_client.call(arm_cmd) &&
                     arm_cmd.response.success){
-                    ROS_INFO("Vehicle armed");
                 }
             }
         }
@@ -169,7 +182,7 @@ int main(int argc, char **argv)
         rate.sleep();
     }
     // Start recording the rosbag
-    // int i; i=system("rosbag record -o ~/rosbag/ -a __name:=my_bag &");
+    int i; i=system("rosbag record -o ~/rosbag/ -a __name:=my_bag &");
 
     ROS_INFO("Waiting for takeoff and  the first waypoint to be reached...");
     while(ros::ok() && 
@@ -179,7 +192,7 @@ int main(int argc, char **argv)
         rate.sleep();
     }
     // Set the control mode
-    current_control_mode.data = OffboardControlMode::THRUST;
+    current_control_mode.data = offboard_control_mode;
     control_mode_pub.publish(current_control_mode);
     // Run until drone lands
     while(ros::ok() && current_extended_state.landed_state != mavros_msgs::ExtendedState::LANDED_STATE_ON_GROUND){
@@ -215,7 +228,7 @@ int main(int argc, char **argv)
     // Set the control mode
     current_control_mode.data = OffboardControlMode::SHUTDOWN;
     control_mode_pub.publish(current_control_mode);
-    // i=system("rosnode kill /my_bag");
+    i=system("rosnode kill /my_bag");
     ROS_INFO("Drone landed.");
     ROS_INFO("Shutting down the node...");
     ros::shutdown();

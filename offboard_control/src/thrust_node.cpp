@@ -86,7 +86,7 @@ void local_velocity_cb(const geometry_msgs::TwistStamped::ConstPtr& msg){
     thrust_sp.orientation.z = q.z();
     thrust_sp.orientation.w = q.w();
     thrust_sp.thrust = az / thrust_divider;
-    ROS_INFO("vz:%lf, vz_error: %lf, thrust: %f", current_vz, vz_error, thrust_sp.thrust);
+    // ROS_INFO("vz:%lf, vz_error: %lf, thrust: %f", current_vz, vz_error, thrust_sp.thrust);
     
     
 
