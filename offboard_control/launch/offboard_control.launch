@@ -4,4 +4,7 @@
 
     <!-- Start position_node -->
     <node name="position_node" pkg="offboard_control" type="position" output="screen" />
+
+    <!-- Start position_node -->
+    <node name="speed_node" pkg="offboard_control" type="speed" output="screen" />
 </launch>

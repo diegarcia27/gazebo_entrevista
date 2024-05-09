@@ -12,7 +12,21 @@
 #include <sensor_msgs/NavSatFix.h>
 #include <mavros_msgs/WaypointSetCurrent.h>
 #include <mavros_msgs/SetMavFrame.h>
+#include <std_msgs/Int32.h>
 #include <stdlib.h>
+#include <includeresources.hpp>
+
+// Parameter
+float acceptance_radius = 2.0;
+enum OffboardControlMode {
+    SHUTDOWN = -1,
+    OFF = 0,
+    POSITION = 1,
+    SPEED = 2,
+    THRUST = 3
+};
+
+// Global variables
 mavros_msgs::State current_state;
 mavros_msgs::ExtendedState current_extended_state;
 mavros_msgs::WaypointList waypoints;
@@ -20,11 +34,12 @@ mavros_msgs::WaypointReached waypoint_reached;
 mavros_msgs::HomePosition current_home_position;
 sensor_msgs::NavSatFix current_global_position;
 mavros_msgs::WaypointReached waypoint_reached_combined;
+geometry_msgs::PoseStamped current_local_position;
+std_msgs::Int32 current_control_mode.data = OffboardControlMode::OFF;
 
-
+// Global services and publishers
 ros::ServiceClient waypoint_set_current;
-
-ros::Publisher wp_reached_combined;
+ros::Publisher wp_reached_combined_pub;
 
 void state_cb(const mavros_msgs::State::ConstPtr& msg){
     current_state = *msg;
@@ -41,13 +56,16 @@ void waypoints_cb(const mavros_msgs::WaypointList::ConstPtr& msg){
 void waypoint_reached_cb(const mavros_msgs::WaypointReached::ConstPtr& msg){
     waypoint_reached = *msg;
     waypoint_reached_combined = *msg;
-    wp_reached_combined.publish(waypoint_reached_combined);
+    wp_reached_combined_pub.publish(waypoint_reached_combined);
 }
 
 void home_position_cb(const mavros_msgs::HomePosition::ConstPtr& msg){
     current_home_position = *msg;
 }
 
+void local_position_cb(const geometry_msgs::PoseStamped::ConstPtr& msg){
+    current_local_position = *msg;
+}
 // Callback for global position
 // Used to check if the drone has reached the waypoints in offboard mode
 void global_position_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
@@ -73,16 +91,17 @@ void global_position_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
                    sin(delta_lon / 2) * sin(delta_lon / 2);
         double c = 2 * atan2(sqrt(a), sqrt(1 - a));
         float distance = earth_radius * c;
-        // distance = sqrt(pow(distance, 2) + pow(, 2));
+        float z_distance = waypoints.waypoints[waypoint_reached_combined.wp_seq + 1].z_alt - current_local_position.pose.position.z;
+        distance = sqrt(pow(distance, 2) + pow(z_distance, 2));
 
         ROS_INFO("Distance to next waypoint: %f meters", distance);
-        if (distance < 2.)
+        if (distance < acceptance_radius)
         {
             mavros_msgs::WaypointSetCurrent wp_current;
             wp_current.request.wp_seq = waypoint_reached_combined.wp_seq + 2;
             if (waypoint_set_current.call(wp_current) &&  wp_current.response.success) {
                 waypoint_reached_combined.wp_seq++ ;
-                wp_reached_combined.publish(waypoint_reached_combined);
+                wp_reached_combined_pub.publish(waypoint_reached_combined);
             }    
         }
     }
@@ -93,6 +112,7 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "commander_node");
     ros::NodeHandle nh;
     ros::Rate rate(1); // 1 Hz
+    ros::Rate fast_rate(10); // 10 Hz
     ros::Subscriber state_sub = nh.subscribe<mavros_msgs::State>
             ("mavros/state", 10, state_cb);
     ros::Subscriber extended_state_sub = nh.subscribe<mavros_msgs::ExtendedState>
@@ -102,14 +122,17 @@ int main(int argc, char **argv)
     ros::Subscriber waypoint_reached_sub = nh.subscribe<mavros_msgs::WaypointReached>
             ("mavros/mission/reached", 10, waypoint_reached_cb);
     ros::Subscriber global_position_sub = nh.subscribe<sensor_msgs::NavSatFix>
-            ("mavros/global_position/global", 1, global_position_cb);
+            ("mavros/global_position/global", 10, global_position_cb);
+    ros::Subscriber local_position_sub = nh.subscribe<geometry_msgs::PoseStamped>
+            ("mavros/local_position/pose", 10, local_position_cb);
     ros::Subscriber home_position_sub = nh.subscribe<mavros_msgs::HomePosition>
-            ("mavros/home_position/home", 10, home_position_cb);
+            ("mavros/home_position/home", 1, home_position_cb);
 
     //Publishers        
-    wp_reached_combined = nh.advertise<mavros_msgs::WaypointReached>
+    wp_reached_combined_pub = nh.advertise<mavros_msgs::WaypointReached>
             ("offboard_control/waypoint_reached_combined", 10);
-
+    ros::Publisher control_mode_pub = nh.advertise<std_msgs::Int32>
+            ("offboard_control/control_mode", 10);
     // Services
     ros::ServiceClient arming_client = nh.serviceClient<mavros_msgs::CommandBool>
             ("mavros/cmd/arming");
@@ -120,7 +143,7 @@ int main(int argc, char **argv)
     waypoint_set_current = nh.serviceClient<mavros_msgs::WaypointSetCurrent>
             ("mavros/mission/set_current");
     
-
+    control_mode_pub.publish(current_control_mode);
     ROS_INFO("Waiting for FCU connection...");
     while(ros::ok() && !current_state.connected){
         ros::spinOnce();
@@ -169,12 +192,16 @@ int main(int argc, char **argv)
     // Start recording the rosbag
     // int i; i=system("rosbag record -o ~/rosbag/ -a __name:=my_bag &");
 
-    ROS_INFO("Waiting for the first waypoint to be reached...");
-    while(ros::ok() && waypoint_reached_combined.wp_seq != 0){
+    ROS_INFO("Waiting for takeoff and  the first waypoint to be reached...");
+    while(ros::ok() && 
+          waypoint_reached_combined.wp_seq != 0 &&
+          current_extended_state.landed_state != mavros_msgs::ExtendedState::LANDED_STATE_IN_AIR){
         ros::spinOnce();
         rate.sleep();
     }
-    
+    // Set the control mode
+    current_control_mode = OffboardControlMode::SPEED;
+    control_mode_pub.publish(current_control_mode);
     // Run until drone lands
     while(ros::ok() && current_extended_state.landed_state != mavros_msgs::ExtendedState::LANDED_STATE_ON_GROUND){
         if(waypoint_reached_combined.wp_seq < 2) {
@@ -200,10 +227,18 @@ int main(int argc, char **argv)
                 }
             }
         }
-        ros::spinOnce();
-        rate.sleep();
+        for (int j = 0; j < 10; j++) {
+            ros::spinOnce();
+            fast_rate.sleep();
+        }
+
     }
-    i=system("rosnode kill /my_bag");
+    // Set the control mode
+    current_control_mode = OffboardControlMode::SHUTDOWN;
+    control_mode_pub.publish(current_control_mode);
+    // i=system("rosnode kill /my_bag");
     ROS_INFO("Drone landed.");
+    ROS_INFO("Shutting down the node...");
+    ros::shutdown();
     return 0;
 }
