@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <ros/console.h>
+#include <resources.hpp>
 #include <mavros_msgs/GlobalPositionTarget.h>
 #include <mavros_msgs/CommandBool.h>
 #include <mavros_msgs/SetMode.h>
@@ -45,7 +46,7 @@ void home_position_cb(const mavros_msgs::HomePosition::ConstPtr& msg){
 
 void control_mode_cb(const std_msgs::Int32::ConstPtr& msg){
     current_control_mode = *msg;
-    if (current_control_mode.data == -1) {
+    if (current_control_mode.data == OffboardControlMode::SHUTDOWN) {
         ros::shutdown();
     }
 }
@@ -55,16 +56,15 @@ void control_mode_cb(const std_msgs::Int32::ConstPtr& msg){
 void global_postion_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
     current_global_position = *msg;
     // Sanity checks
-    if (current_control_mode.data < 1||
+    if (current_control_mode.data == OffboardControlMode::OFF||
          !current_state.armed)
         return;
-    mavros_msgs::Waypoint last_wp = waypoints.waypoints[waypoint_reached.wp_seq];
     mavros_msgs::Waypoint next_wp = waypoints.waypoints[waypoint_reached.wp_seq + 1];
     
     // Calculate the direction in degrees from north
     double lat_diff = next_wp.x_lat - current_global_position.latitude;
     double lon_diff = next_wp.y_long - current_global_position.longitude;
-    double direction_rad = atan2(lat_diff, lon_diff);
+    double direction_rad = calculate_direction(current_global_position.latitude, current_global_position.longitude, next_wp.x_lat, next_wp.y_long);
     position_sp.yaw = direction_rad;
 
     // Set the position setpoint
@@ -79,7 +79,7 @@ void global_postion_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
                             mavros_msgs::GlobalPositionTarget::IGNORE_AFY |
                             mavros_msgs::GlobalPositionTarget::IGNORE_AFZ |
                             mavros_msgs::GlobalPositionTarget::IGNORE_YAW_RATE;
-    if (current_control_mode.data == 1){
+    if (current_control_mode.data == OffboardControlMode::POSITION){
         position_sp_pub.publish(position_sp);
     }
     // position_sp_pub.publish(position_sp);
@@ -114,8 +114,7 @@ int main(int argc, char **argv)
 
     
     while(ros::ok() ){
-        ros::spinOnce();
-        rate.sleep();
+        ros::spin();
     }
     return 0;
 }

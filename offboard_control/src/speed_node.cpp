@@ -1,21 +1,11 @@
 #include <ros/ros.h>
 #include <ros/console.h>
+#include <resources.hpp>
 #include <geometry_msgs/PoseStamped.h>
-
 #include <mavros_msgs/GlobalPositionTarget.h>
-#include <mavros_msgs/CommandBool.h>
-#include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
-#include <mavros_msgs/ExtendedState.h>
-#include <mavros_msgs/HomePosition.h>
-#include <mavros_msgs/WaypointList.h>
-#include <mavros_msgs/WaypointReached.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <std_msgs/Int32.h>
-
-//Parameters
-float speed_kp = 2.0;
-float max_speed = 5.0;
 
 // Global variables
 mavros_msgs::State current_state;
@@ -44,7 +34,7 @@ void local_position_cb(const geometry_msgs::PoseStamped::ConstPtr& msg){
 
 void control_mode_cb(const std_msgs::Int32::ConstPtr& msg){
     current_control_mode = *msg;
-    if (current_control_mode.data == -1) {
+    if (current_control_mode.data == OffboardControlMode::SHUTDOWN) {
         ros::shutdown();
     }
 }
@@ -53,33 +43,20 @@ void control_mode_cb(const std_msgs::Int32::ConstPtr& msg){
 void global_postion_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
     current_global_position = *msg;
     // Sanity checks
-    // Sanity checks
-    if (current_control_mode.data < 1||
+    if (current_control_mode.data == OffboardControlMode::OFF||
          !current_state.armed)
         return;
     
     // Convert latitude and longitude to radians
-    double lat1 = current_global_position.latitude * M_PI / 180.0;
-    double lon1 = current_global_position.longitude * M_PI / 180.0;
-    double lat2 = current_position_sp.latitude * M_PI / 180.0;
-    double lon2 = current_position_sp.longitude * M_PI / 180.0;
+    double lat1 = current_global_position.latitude;
+    double lon1 = current_global_position.longitude;
+    double lat2 = current_position_sp.latitude;
+    double lon2 = current_position_sp.longitude;
+    float distance = calculate_position_error(lat1, lon1, lat2, lon2);
 
-    // Earth radius in meters
-    double earth_radius = 6371000.0;
-
-    // Calculate the differences in latitude and longitude
-    double delta_lat = lat2 - lat1;
-    double delta_lon = lon2 - lon1;
-
-    // Calculate the distance using the haversine formula
-    double a = sin(delta_lat / 2) * sin(delta_lat / 2) +
-                cos(lat1) * cos(lat2) *
-                sin(delta_lon / 2) * sin(delta_lon / 2);
-    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
-    float distance = earth_radius * c;
     float z_distance = current_position_sp.altitude - current_local_position.pose.position.z;
     // Calculate the direction in degrees from north
-    double direction_rad = atan2(delta_lat, delta_lon);
+    double direction_rad = current_position_sp.yaw;
     // Calculate the speed setpoint
     double horizontal_speed = distance * speed_kp;
     if (horizontal_speed > max_speed) {
@@ -92,7 +69,7 @@ void global_postion_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
     // Set the speed setpoint
     speed_sp.velocity.x = horizontal_speed * cos(direction_rad);
     speed_sp.velocity.y = horizontal_speed * sin(direction_rad);
-    speed_sp.velocity.z = vertical_speed;
+    speed_sp.velocity.z = vertical_speed / 5;
     speed_sp.yaw = direction_rad;
     speed_sp.coordinate_frame = mavros_msgs::GlobalPositionTarget::FRAME_GLOBAL_REL_ALT;
     speed_sp.type_mask = mavros_msgs::GlobalPositionTarget::IGNORE_LATITUDE |
@@ -102,10 +79,9 @@ void global_postion_cb(const sensor_msgs::NavSatFix::ConstPtr& msg){
                             mavros_msgs::GlobalPositionTarget::IGNORE_AFY |
                             mavros_msgs::GlobalPositionTarget::IGNORE_AFZ |
                             mavros_msgs::GlobalPositionTarget::IGNORE_YAW_RATE;
-    if (current_control_mode.data == 2){
+    if (current_control_mode.data == OffboardControlMode::SPEED){
         speed_sp_pub.publish(speed_sp);
     }
-    speed_sp_pub.publish(speed_sp);
     speed_control_pub.publish(speed_sp);
     
 }
@@ -135,8 +111,7 @@ int main(int argc, char **argv)
 
     
     while(ros::ok() ){
-        ros::spinOnce();
-        rate.sleep();
+        ros::spin();
     }
     return 0;
 }

@@ -5,6 +5,9 @@
     <!-- Start position_node -->
     <node name="position_node" pkg="offboard_control" type="position" output="screen" />
 
-    <!-- Start position_node -->
+    <!-- Start speedn_node -->
     <node name="speed_node" pkg="offboard_control" type="speed" output="screen" />
+
+    <!-- Start thrust_node -->
+    <node name="thrust_node" pkg="offboard_control" type="thrust" output="screen" />
 </launch>

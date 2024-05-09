@@ -141,6 +141,7 @@ include
 add_executable(commander_node src/commander_node.cpp)
 add_executable(position_node src/position_node.cpp)
 add_executable(speed_node src/speed_node.cpp)
+add_executable(thrust_node src/thrust_node.cpp)
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use
@@ -148,11 +149,13 @@ add_executable(speed_node src/speed_node.cpp)
 set_target_properties(commander_node PROPERTIES OUTPUT_NAME commander PREFIX "")
 set_target_properties(position_node PROPERTIES OUTPUT_NAME position PREFIX "")
 set_target_properties(speed_node PROPERTIES OUTPUT_NAME speed PREFIX "")
+set_target_properties(thrust_node PROPERTIES OUTPUT_NAME thrust PREFIX "")
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 add_dependencies(commander_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(position_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(speed_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(thrust_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 ## Specify libraries to link a library or executable target against
 target_link_libraries(commander_node
   ${catkin_LIBRARIES}
@@ -160,8 +163,10 @@ target_link_libraries(commander_node
 target_link_libraries(position_node
   ${catkin_LIBRARIES}
 )
-
 target_link_libraries(speed_node
+  ${catkin_LIBRARIES}
+)
+target_link_libraries(thrust_node
   ${catkin_LIBRARIES}
 )
 #############
